@@ -1,0 +1,13 @@
+{
+  "name": "agent-browser",
+  "description": "Browser automation CLI skill for AI agents — E2E testing, web scraping, form automation, screenshots, and debugging via agent-browser 0.14.0.",
+  "version": "1.0.0",
+  "author": {
+    "name": "OWENLEEzy",
+    "url": "https://github.com/OWENLEEzy"
+  },
+  "homepage": "https://github.com/OWENLEEzy/agent-browser",
+  "repository": "https://github.com/OWENLEEzy/agent-browser",
+  "license": "MIT",
+  "keywords": ["browser", "automation", "e2e", "scraping", "playwright", "testing"]
+}
