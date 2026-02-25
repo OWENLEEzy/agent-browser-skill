@@ -1,0 +1,21 @@
+{
+  "name": "agent-browser-skill",
+  "description": "Claude Code skill for browser automation via agent-browser CLI — E2E testing, web scraping, form automation, screenshots, and debugging.",
+  "author": {
+    "name": "OWENLEEzy",
+    "url": "https://github.com/OWENLEEzy"
+  },
+  "homepage": "https://github.com/OWENLEEzy/agent-browser-skill",
+  "repository": "https://github.com/OWENLEEzy/agent-browser-skill",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "browser",
+    "automation",
+    "e2e-testing",
+    "web-scraping",
+    "playwright",
+    "skill"
+  ],
+  "skills": "./skills"
+}
