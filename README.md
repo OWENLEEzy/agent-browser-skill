@@ -6,16 +6,15 @@ A [Claude Code](https://claude.ai/code) skill that teaches Claude how to drive b
 
 ## Skill Structure
 
-This plugin ships **6 focused skills** instead of one large skill:
+This plugin ships **5 focused skills** instead of one large skill:
 
 | Skill | When Claude loads it |
 |:---|:---|
-| `agent-browser` | When the task type is unclear or ambiguous |
 | `agent-browser-e2e` | E2E testing, login flows, form submission, UI validation |
 | `agent-browser-debug` | Investigating JS errors, broken buttons, failed API calls |
 | `agent-browser-scrape` | Extracting data from JS-rendered pages, pagination, infinite scroll |
 | `agent-browser-automate` | Form filling, file upload/download, session reuse, multi-step flows |
-| `agent-browser-commands` | Looking up command syntax, global options, semantic locators |
+| `agent-browser-commands` | Command syntax, global options, or when unsure which skill to use |
 
 Full command reference: use the `agent-browser-commands` skill.
 
