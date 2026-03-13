@@ -1,8 +1,23 @@
 # agent-browser-skill
 
-> Skill version: **1.0.0** | agent-browser CLI: **0.14.0**
+> Skill version: **2.0.0** | agent-browser CLI: **0.18.0**
 
 A [Claude Code](https://claude.ai/code) skill that teaches Claude how to drive browsers via the [`agent-browser`](https://www.npmjs.com/package/agent-browser) CLI.
+
+## Skill Structure
+
+This plugin ships **6 focused skills** instead of one large skill:
+
+| Skill | When Claude loads it |
+|:---|:---|
+| `agent-browser` | When the task type is unclear or ambiguous |
+| `agent-browser-e2e` | E2E testing, login flows, form submission, UI validation |
+| `agent-browser-debug` | Investigating JS errors, broken buttons, failed API calls |
+| `agent-browser-scrape` | Extracting data from JS-rendered pages, pagination, infinite scroll |
+| `agent-browser-automate` | Form filling, file upload/download, session reuse, multi-step flows |
+| `agent-browser-commands` | Looking up command syntax, global options, semantic locators |
+
+Full command reference: use the `agent-browser-commands` skill.
 
 ---
 
@@ -43,7 +58,7 @@ Extract data from JavaScript-rendered pages, handle pagination and infinite scro
 
 ```bash
 agent-browser open https://example.com/products
-agent-browser wait ".product-card"
+agent-browser wait --load networkidle
 agent-browser eval "[...document.querySelectorAll('.product-card')].map(c => ({
   name: c.querySelector('h2')?.textContent,
   price: c.querySelector('.price')?.textContent
@@ -122,5 +137,5 @@ agent-browser screenshot --annotate          # AI-friendly labeled screenshot
 ## Requirements
 
 - Node.js 18+
-- `agent-browser` 0.14.0+ — `npm install -g agent-browser`
+- `agent-browser` 0.18.0+ — `npm install -g agent-browser`
 - Claude Code with plugin support
