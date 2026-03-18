@@ -6,33 +6,89 @@ A [Claude Code](https://claude.ai/code) skill that turns Claude into an **autono
 
 ---
 
-## Design Philosophy
+## The Problem With Other Browser Skills
 
-Most browser automation skills are documentation mirrors — you still have to know what commands to run. This skill is different.
+Most browser automation skills are documentation mirrors — a reformatted version of `--help`. You load the skill, then still have to figure out which commands to run, in what order, and what to do when something breaks.
 
-**You state a goal. Claude plans, executes, recovers, and reports.**
+**This skill takes a different approach: encode expert judgment, not documentation.**
 
-```
-You: "验证登录功能是否正常，URL 是 https://app.example.com"
-  ↓
-Claude asks clarifying questions (one at a time)
-  ↓
-Claude presents an execution plan → you confirm
-  ↓
-Claude executes autonomously:
-  - technical failures → auto-recover (retry, fallback engine, re-auth)
-  - judgment calls    → pause and ask you
-  ↓
-Structured report: steps ✅❌⏭️, issues 🐛, screenshots 📸, next steps →
-```
+The difference:
+
+| Documentation skill | This skill |
+|:---|:---|
+| "Here are the commands" | "Here's the right sequence for your goal" |
+| You decide what to run | Claude decides, you confirm the plan |
+| You debug failures | Claude auto-recovers technical failures |
+| No output structure | Structured report every time |
+
+---
+
+## Design Logic
+
+### Decision 1: Single entry point
+
+**Why not multiple skills (one per task type)?**
+
+Choosing between `agent-browser-e2e`, `agent-browser-scrape`, `agent-browser-debug` requires you to already know what kind of task you have. But real goals don't fit neatly into one category — "verify checkout works" is E2E + auth automation + debugging if something breaks.
+
+A single `agent-browser` skill takes your goal and figures out which workflow(s) apply. You don't choose; Claude routes.
+
+---
+
+### Decision 2: Ask first, then plan, then execute
+
+**Why not just start running commands immediately?**
+
+Executing without context wastes time and can cause harm (submitting forms, deleting data). The INTAKE phase collects just enough to build a correct plan. The PLAN phase makes that plan visible before anything runs — you can catch wrong assumptions before they become wrong actions.
+
+The sequence: **understand → align → execute** — not **execute → fix → repeat**.
+
+---
+
+### Decision 3: Auto-recovery vs. judgment gates
+
+**Why does Claude sometimes recover silently and sometimes stop to ask?**
+
+Two categories of failure require different responses:
+
+**Technical failures** have known solutions that don't require human judgment:
+- Stale element ref → re-snapshot and relocate
+- Timeout → wait longer and retry
+- lightpanda returned empty → switch to native Chrome
+- Auth expired → re-authenticate from vault
+
+Claude handles these without interrupting you. You shouldn't need to know that `@e3` became `@e7` after a re-render.
+
+**Judgment calls** have no correct answer without your input:
+- Found a JS error — is this a known issue or a real bug?
+- Page content doesn't match expected — is that intentional?
+- About to submit a form — are these the right values?
+
+These require a human decision. Claude pauses, shows the evidence, asks one question, then continues.
+
+The rule: **if Claude can resolve it without new information from you, it does. If it can't, it asks once.**
+
+---
+
+### Decision 4: Internal templates
+
+**Why do the other skills exist if users don't invoke them?**
+
+Each execution type (E2E verification, debugging triage, data scraping, task automation) has its own ordered protocol, recovery patterns, and judgment gates. Encoding all of this in one file would be unmanageable.
+
+The templates are modular execution protocols — the orchestrator assembles the right ones for your goal and loads them via the `Skill` tool. You get the right protocol without having to know it exists.
+
+---
+
+### Decision 5: Structured report every time
+
+**Why a fixed report format?**
+
+Ad-hoc summaries are hard to scan and easy to skip. A consistent report structure means you always know where to look: steps at the top, issues in the middle, evidence files and next steps at the bottom. It also means Claude can't quietly skip reporting a failure.
 
 ---
 
 ## How It Works
-
-### Single entry point
-
-Always invoke `agent-browser`. You never need to choose a sub-skill.
 
 ### 4-Phase Protocol
 
@@ -40,8 +96,8 @@ Always invoke `agent-browser`. You never need to choose a sub-skill.
 |:---|:---|
 | **INTAKE** | Claude asks questions one at a time until fully clear |
 | **PLAN** | Claude generates a numbered plan, waits for your confirmation |
-| **EXECUTE** | Autonomous execution — auto-recovers technical failures |
-| **REPORT** | Structured output: step results, issues found, evidence files |
+| **EXECUTE** | Autonomous execution — auto-recovers technical failures, pauses at judgment calls |
+| **REPORT** | Structured output: step results, issues found, evidence files, next steps |
 
 ### Auto-recovery (never interrupts you)
 
@@ -55,7 +111,7 @@ Always invoke `agent-browser`. You never need to choose a sub-skill.
 
 ### Judgment gates (pauses for you)
 
-Claude only stops to ask when **you** need to decide:
+Claude only stops to ask when the answer requires your judgment:
 - Found a JS error — bug or known issue?
 - Expected content ≠ actual — is this correct?
 - About to submit / delete / pay — confirm?
@@ -63,8 +119,6 @@ Claude only stops to ask when **you** need to decide:
 ---
 
 ## Skill Structure
-
-One user-facing skill + internal execution templates:
 
 | Skill | Role |
 |:---|:---|
@@ -76,39 +130,41 @@ One user-facing skill + internal execution templates:
 | `agent-browser-ios` | Internal template: iOS Simulator protocol |
 | `agent-browser-commands` | Internal reference: full CLI command syntax |
 
-The internal templates are loaded automatically by the orchestrator based on your goal. You don't invoke them directly.
-
 ---
 
 ## Example
 
 ```
-You:    下载 Rich Sutton「The Bitter Lesson」为 PDF，存到 ~/Downloads/
+You:    Download "The Bitter Lesson" by Rich Sutton as a PDF
 
-Claude: 存到 ~/Downloads/bitter-lesson.pdf 可以吗？
-
-You:    ok
-
-Claude: 目标：下载 The Bitter Lesson PDF
-        策略：导航原文页面，用 pdf 命令保存
-        步骤：
-          1. 打开 incompleteideas.net/IncIdeas/BitterLesson.html
-          2. wait --load networkidle
-          3. pdf ~/Downloads/bitter-lesson.pdf
-        确认？
+Claude: Save to ~/Downloads/bitter-lesson.pdf?
 
 You:    ok
 
-Claude: [执行中，自动恢复残留进程冲突]
+Claude: Goal:     Download The Bitter Lesson as PDF
+        Strategy: Navigate to the source page, save via pdf command
+        Steps:
+          1. Open incompleteideas.net/IncIdeas/BitterLesson.html → expected: page loads
+          2. wait --load networkidle → expected: stable
+          3. pdf ~/Downloads/bitter-lesson.pdf → expected: file created
+        Done when: file exists and size > 10KB
+        Confirm?
 
-        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        执行报告：下载 The Bitter Lesson PDF
-        状态：✅ 完成
-        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        ✅ 1. 打开页面 → 成功（自动恢复：清除残留进程）
-        ✅ 2. 等待稳定 → networkidle 完成
-        ✅ 3. 保存 PDF → ~/Downloads/bitter-lesson.pdf（44KB）
-        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You:    ok
+
+Claude: [auto-recovered: cleared stale browser process, retried step 1]
+
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        Execution Report: Download The Bitter Lesson PDF
+        Status: ✅ Done
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        ✅ 1. Open page → success (auto-recovered: cleared stale process)
+        ✅ 2. Wait for stable → networkidle reached
+        ✅ 3. Save PDF → ~/Downloads/bitter-lesson.pdf (44KB)
+
+        Next steps:
+          → open ~/Downloads/bitter-lesson.pdf
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 ---
@@ -117,12 +173,12 @@ Claude: [执行中，自动恢复残留进程冲突]
 
 | Tell Claude | Template used |
 |:---|:---|
-| 「验证这个功能是否正常」 | e2e |
-| 「为什么登录按钮点不了」 | debug |
-| 「帮我抓这个页面的数据」 | scrape |
-| 「每天自动下载这份报告」 | automate |
-| 「在 iPhone 上测试这个页面」 | ios |
-| 复杂目标（如：登录 + 验证 + 截图） | automate + e2e 组合 |
+| "Verify this feature works" | e2e |
+| "Why is the login button broken" | debug |
+| "Scrape this product listing" | scrape |
+| "Automate this weekly download" | automate |
+| "Test this on iPhone" | ios |
+| Complex (login + verify + screenshot) | automate + e2e combined |
 
 ---
 
