@@ -1,22 +1,128 @@
 # agent-browser-skill
 
-> Skill version: **2.0.0** | agent-browser CLI: **0.18.0**
+> Skill version: **3.0.0** | agent-browser CLI: **0.18.0**
 
-A [Claude Code](https://claude.ai/code) skill that teaches Claude how to drive browsers via the [`agent-browser`](https://www.npmjs.com/package/agent-browser) CLI.
+A [Claude Code](https://claude.ai/code) skill that turns Claude into an **autonomous browser automation agent** via the [`agent-browser`](https://www.npmjs.com/package/agent-browser) CLI.
+
+---
+
+## Design Philosophy
+
+Most browser automation skills are documentation mirrors — you still have to know what commands to run. This skill is different.
+
+**You state a goal. Claude plans, executes, recovers, and reports.**
+
+```
+You: "验证登录功能是否正常，URL 是 https://app.example.com"
+  ↓
+Claude asks clarifying questions (one at a time)
+  ↓
+Claude presents an execution plan → you confirm
+  ↓
+Claude executes autonomously:
+  - technical failures → auto-recover (retry, fallback engine, re-auth)
+  - judgment calls    → pause and ask you
+  ↓
+Structured report: steps ✅❌⏭️, issues 🐛, screenshots 📸, next steps →
+```
+
+---
+
+## How It Works
+
+### Single entry point
+
+Always invoke `agent-browser`. You never need to choose a sub-skill.
+
+### 4-Phase Protocol
+
+| Phase | What happens |
+|:---|:---|
+| **INTAKE** | Claude asks questions one at a time until fully clear |
+| **PLAN** | Claude generates a numbered plan, waits for your confirmation |
+| **EXECUTE** | Autonomous execution — auto-recovers technical failures |
+| **REPORT** | Structured output: step results, issues found, evidence files |
+
+### Auto-recovery (never interrupts you)
+
+| Failure | Recovery |
+|:---|:---|
+| Stale element ref | Re-snapshot, relocate |
+| Timeout | Increasing wait: 1s → 3s → 5s |
+| lightpanda returns empty | Switch to `--native` Chrome |
+| Auth expired | Re-authenticate via vault |
+| Selector not found | Try semantic `find role` locator |
+
+### Judgment gates (pauses for you)
+
+Claude only stops to ask when **you** need to decide:
+- Found a JS error — bug or known issue?
+- Expected content ≠ actual — is this correct?
+- About to submit / delete / pay — confirm?
+
+---
 
 ## Skill Structure
 
-This plugin ships **5 focused skills** instead of one large skill:
+One user-facing skill + internal execution templates:
 
-| Skill | When Claude loads it |
+| Skill | Role |
 |:---|:---|
-| `agent-browser-e2e` | E2E testing, login flows, form submission, UI validation |
-| `agent-browser-debug` | Investigating JS errors, broken buttons, failed API calls |
-| `agent-browser-scrape` | Extracting data from JS-rendered pages, pagination, infinite scroll |
-| `agent-browser-automate` | Form filling, file upload/download, session reuse, multi-step flows |
-| `agent-browser-commands` | Command syntax, global options, or when unsure which skill to use |
+| `agent-browser` | **Entry point** — orchestrator, always use this |
+| `agent-browser-e2e` | Internal template: E2E verification protocol |
+| `agent-browser-debug` | Internal template: debugging triage protocol |
+| `agent-browser-scrape` | Internal template: data extraction protocol |
+| `agent-browser-automate` | Internal template: form/task automation protocol |
+| `agent-browser-ios` | Internal template: iOS Simulator protocol |
+| `agent-browser-commands` | Internal reference: full CLI command syntax |
 
-Full command reference: use the `agent-browser-commands` skill.
+The internal templates are loaded automatically by the orchestrator based on your goal. You don't invoke them directly.
+
+---
+
+## Example
+
+```
+You:    下载 Rich Sutton「The Bitter Lesson」为 PDF，存到 ~/Downloads/
+
+Claude: 存到 ~/Downloads/bitter-lesson.pdf 可以吗？
+
+You:    ok
+
+Claude: 目标：下载 The Bitter Lesson PDF
+        策略：导航原文页面，用 pdf 命令保存
+        步骤：
+          1. 打开 incompleteideas.net/IncIdeas/BitterLesson.html
+          2. wait --load networkidle
+          3. pdf ~/Downloads/bitter-lesson.pdf
+        确认？
+
+You:    ok
+
+Claude: [执行中，自动恢复残留进程冲突]
+
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        执行报告：下载 The Bitter Lesson PDF
+        状态：✅ 完成
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        ✅ 1. 打开页面 → 成功（自动恢复：清除残留进程）
+        ✅ 2. 等待稳定 → networkidle 完成
+        ✅ 3. 保存 PDF → ~/Downloads/bitter-lesson.pdf（44KB）
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+---
+
+## Supported Goals
+
+| Tell Claude | Template used |
+|:---|:---|
+| 「验证这个功能是否正常」 | e2e |
+| 「为什么登录按钮点不了」 | debug |
+| 「帮我抓这个页面的数据」 | scrape |
+| 「每天自动下载这份报告」 | automate |
+| 「在 iPhone 上测试这个页面」 | ios |
+| 复杂目标（如：登录 + 验证 + 截图） | automate + e2e 组合 |
 
 ---
 
@@ -35,101 +141,6 @@ agent-browser install        # download Chromium (first time only)
 /plugin marketplace add OWENLEEzy/agent-browser-skill
 /plugin install agent-browser-skill@agent-browser-skill
 ```
-
----
-
-## Use cases
-
-### E2E Testing
-Automate full user journeys — login, form submission, cart checkout, redirect verification — with screenshot and video capture on failure.
-
-```bash
-agent-browser open https://app.example.com/signup
-agent-browser snapshot -i
-agent-browser find label "Email" fill "test@example.com"
-agent-browser find role button click --name "Sign Up"
-agent-browser wait "@welcome-banner"
-agent-browser screenshot --full result.png
-```
-
-### Web Scraping
-Extract data from JavaScript-rendered pages, handle pagination and infinite scroll, bypass cookie banners.
-
-```bash
-agent-browser open https://example.com/products
-agent-browser wait --load networkidle
-agent-browser eval "[...document.querySelectorAll('.product-card')].map(c => ({
-  name: c.querySelector('h2')?.textContent,
-  price: c.querySelector('.price')?.textContent
-}))"
-```
-
-### Form Automation
-Fill and submit complex forms — multi-step wizards, file uploads, dropdowns, date pickers.
-
-```bash
-agent-browser find label "Name" fill "John Doe"
-agent-browser find label "Resume" upload ./resume.pdf
-agent-browser find label "Country" select "Taiwan"
-agent-browser find role button click --name "Submit"
-```
-
-### Visual Regression Testing
-Catch unintended UI changes between deploys.
-
-```bash
-agent-browser screenshot --full baseline.png        # save baseline
-# ... deploy changes ...
-agent-browser diff screenshot --baseline baseline.png  # compare
-```
-
-### Debugging Web Apps
-Inspect console errors, network requests, JavaScript state — without opening DevTools manually.
-
-```bash
-agent-browser --headed open https://app.example.com
-agent-browser errors                                # JS errors
-agent-browser console --pattern "error|warn"       # console logs
-agent-browser network requests --filter "api"      # API calls
-agent-browser eval "window.__APP_STATE__"          # read app state
-```
-
-### Auth-Protected Pages
-Reuse login sessions across runs without re-authenticating every time.
-
-```bash
-# First time: login and save
-agent-browser --profile ~/.myapp open https://app.example.com/login
-agent-browser find label "Email" fill "me@example.com"
-agent-browser find role button click --name "Sign In"
-agent-browser wait "@dashboard"
-
-# Future runs: already logged in
-agent-browser --profile ~/.myapp open https://app.example.com/dashboard
-```
-
-### API Mocking / Edge Case Testing
-Simulate network errors, empty responses, and slow APIs without touching the backend.
-
-```bash
-agent-browser network route "**/api/users**" --abort      # simulate outage
-agent-browser network route "**/api/data**" --body '[]'   # empty response
-agent-browser network unroute                              # restore
-```
-
----
-
-## Core workflow
-
-```bash
-agent-browser open https://example.com
-agent-browser snapshot -i                    # accessibility tree → @e1, @e2...
-agent-browser click @e3
-agent-browser fill @e5 "user@example.com"
-agent-browser screenshot --annotate          # AI-friendly labeled screenshot
-```
-
-> Re-run `snapshot` after any navigation — refs are invalidated.
 
 ---
 
