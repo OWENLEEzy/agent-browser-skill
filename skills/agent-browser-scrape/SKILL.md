@@ -1,49 +1,85 @@
 ---
 name: agent-browser-scrape
-description: Use when extracting data from JavaScript-rendered pages, handling pagination, or scraping dynamic content
+description: "[INTERNAL TEMPLATE] Data extraction execution protocol. Called by agent-browser orchestrator."
 ---
 
-# Agent Browser — Data Extraction / Scraping
+# Data Extraction — Execution Protocol
 
-**Recommended config:** Try `--engine lightpanda` first (lightest, fastest headless). Fall back to `--native` if page needs full Chrome.
+> **Internal template.** Entry point: `agent-browser` skill.
 
 ---
 
-## Environment Check
+## Execution Sequence
 
 ```bash
-printenv | grep AGENT_BROWSER   # already set? Omit the corresponding inline flag
-```
-
----
-
-## Workflow
-
-```bash
-# 1. Try lightpanda first
-AGENT_BROWSER_ENGINE=lightpanda agent-browser open https://example.com/products
+# 1. Try lightpanda first (fastest, lightest)
+AGENT_BROWSER_ENGINE=lightpanda agent-browser open <url>
 AGENT_BROWSER_ENGINE=lightpanda agent-browser wait --load networkidle
-AGENT_BROWSER_ENGINE=lightpanda agent-browser eval "[...document.querySelectorAll('.product-card')].map(c => ({
-  name: c.querySelector('h2')?.textContent?.trim(),
-  price: c.querySelector('.price')?.textContent?.trim()
+
+# 2. Understand structure
+AGENT_BROWSER_ENGINE=lightpanda agent-browser snapshot -c
+
+# 3. Extract
+AGENT_BROWSER_ENGINE=lightpanda agent-browser eval "[...document.querySelectorAll('.item')].map(el => ({
+  name: el.querySelector('h2')?.textContent?.trim(),
+  price: el.querySelector('.price')?.textContent?.trim()
 }))"
 
-# 2. If lightpanda returns empty/wrong data, switch to native:
-AGENT_BROWSER_NATIVE=1 agent-browser open https://example.com/products
+# 4. If empty/wrong → fallback to native
+AGENT_BROWSER_NATIVE=1 agent-browser open <url>
 AGENT_BROWSER_NATIVE=1 agent-browser wait --load networkidle
-AGENT_BROWSER_NATIVE=1 agent-browser eval "[...document.querySelectorAll('.product-card')].map(c => ({
-  name: c.querySelector('h2')?.textContent?.trim(),
-  price: c.querySelector('.price')?.textContent?.trim()
-}))"
+AGENT_BROWSER_NATIVE=1 agent-browser eval "<same query>"
 ```
 
 ---
 
-## Key Patterns
+## Pagination Handling
 
-- `snapshot -c` (compact) to quickly find extractable DOM structure
-- `scroll down` + `eval` loop for infinite scroll pages
-- Always `wait --load networkidle` before `eval` on dynamic pages
+```bash
+# Scroll-based infinite scroll
+AGENT_BROWSER_NATIVE=1 agent-browser scroll down
+AGENT_BROWSER_NATIVE=1 agent-browser wait --load networkidle
+AGENT_BROWSER_NATIVE=1 agent-browser eval "<extract again>"
+# Repeat until no new items
+
+# Click-based pagination
+AGENT_BROWSER_NATIVE=1 agent-browser find role button click --name "Next"
+AGENT_BROWSER_NATIVE=1 agent-browser wait --load networkidle
+```
+
+---
+
+## Anti-Bot Bypass
+
+```bash
+# Level 1: custom user-agent
+agent-browser --user-agent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" open <url>
+
+# Level 2: disable automation detection (combine with level 1 for strongest)
+agent-browser \
+  --user-agent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+  --args "--disable-blink-features=AutomationControlled" \
+  open <url>
+```
+
+---
+
+## Recovery Patterns
+
+| Failure | Recovery |
+|:---|:---|
+| lightpanda returns empty | Switch to `--native` |
+| Detected as bot | Add `--user-agent`, then combine with `--args` |
+| `eval` before content loads | `wait --load networkidle` before every `eval` |
+| Infinite scroll not handled | `scroll down` + re-`eval` loop |
+
+---
+
+## Judgment Gates
+
+Pause when:
+- Anti-bot measures block all approaches (CAPTCHA requires human)
+- Data structure unclear after `snapshot -c` — show to user, ask how to identify items
 
 ---
 
@@ -51,44 +87,6 @@ AGENT_BROWSER_NATIVE=1 agent-browser eval "[...document.querySelectorAll('.produ
 
 | Mistake | Fix |
 |:---|:---|
-| lightpanda returns empty/wrong data | Switch to `--native` — page needs full Chrome JS engine |
-| `eval` runs before content loads | `wait --load networkidle` before every `eval` |
-| Infinite scroll not handled | `scroll down`, then re-`eval` in a loop |
-
----
-
-## After Task Completion
-
-**MANDATORY. Do not skip. There are no exceptions.**
-
-### Step 1 — List pitfalls + lightpanda compatibility
-
-Format each finding:
-
-🕳️ **Pitfall:** [what happened]
-   **Workaround:** [what fixed it]
-   **In skill?** ✅ Yes — [section] / ❌ Missing
-
-**Also report lightpanda status (always):**
-- ✅ lightpanda succeeded — site: [domain]
-- ❌ lightpanda failed → fell back to native — site: [domain], reason: [what broke]
-
-This tracks compatibility over time so future runs skip lightpanda on known-incompatible sites.
-
-If zero pitfalls: write "✅ No new pitfalls encountered."
-
-### Step 2 — Ask the user
-
-> 「任务完成。遇到 N 个坑，其中 X 个还没写进 skill。要更新吗？」
-
-If yes → update Pitfalls + bump version. Then scan all other `agent-browser-*` skills for the same issue.
-
-### Anti-rationalization
-
-| Excuse | Reality |
-|:---|:---|
-| "No pitfalls encountered" | Write "✅ No new pitfalls" — still required |
-| "I mentioned issues inline" | Inline ≠ structured retrospective |
-| "lightpanda failure isn't a skill issue" | It's a compatibility data point — record it |
-| "User can see what happened" | User needs a structured summary to decide on iteration |
-| "Not sure if it's a skill issue" | If you worked around something, it's a pitfall |
+| lightpanda returns empty | Switch to `--native` |
+| `eval` before load | `wait --load networkidle` first |
+| Bot detected despite `--user-agent` | Add `--args "--disable-blink-features=AutomationControlled"` |

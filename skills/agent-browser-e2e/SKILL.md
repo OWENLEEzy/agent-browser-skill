@@ -1,56 +1,80 @@
 ---
 name: agent-browser-e2e
-description: Use when verifying that a web page works correctly — login flows, form submission, redirect testing, UI validation
+description: "[INTERNAL TEMPLATE] E2E verification execution protocol. Called by agent-browser orchestrator."
 ---
 
-# Agent Browser — E2E / Testing
+# E2E Verification — Execution Protocol
 
-**Recommended config:** `AGENT_BROWSER_NATIVE=1` (faster, no Node.js overhead)
+> **Internal template.** Entry point: `agent-browser` skill.
 
 ---
 
-## Environment Check
+## Execution Sequence
 
 ```bash
-printenv | grep AGENT_BROWSER   # already set? Omit the corresponding inline flag
-```
-
----
-
-## Workflow
-
-```bash
-AGENT_BROWSER_NATIVE=1 agent-browser open https://app.example.com
-AGENT_BROWSER_NATIVE=1 agent-browser snapshot -i
-AGENT_BROWSER_NATIVE=1 agent-browser find label "Email" fill "test@example.com"
-AGENT_BROWSER_NATIVE=1 agent-browser find role button click --name "Sign Up"
+# 1. Open and wait for stable state
+AGENT_BROWSER_NATIVE=1 agent-browser open <url>
 AGENT_BROWSER_NATIVE=1 agent-browser wait --load networkidle
+
+# 2. Check for errors before any interaction
+AGENT_BROWSER_NATIVE=1 agent-browser errors          # → judgment gate if critical errors found
+AGENT_BROWSER_NATIVE=1 agent-browser snapshot -i
+
+# 3. Execute test steps (prefer semantic locators)
+AGENT_BROWSER_NATIVE=1 agent-browser find label "Email" fill "test@example.com"
+AGENT_BROWSER_NATIVE=1 agent-browser find role button click --name "Sign In"
+
+# 4. After every navigation: re-snapshot + re-wait
+AGENT_BROWSER_NATIVE=1 agent-browser wait --load networkidle
+AGENT_BROWSER_NATIVE=1 agent-browser snapshot -i
+
+# 5. Assert state
+AGENT_BROWSER_NATIVE=1 agent-browser is visible @e3
+AGENT_BROWSER_NATIVE=1 agent-browser is checked @e5
+AGENT_BROWSER_NATIVE=1 agent-browser get text @e1
+
+# 6. Capture evidence
 AGENT_BROWSER_NATIVE=1 agent-browser screenshot --full result.png
 ```
 
 ---
 
-## Key Patterns
+## Recovery Patterns
 
-- Always `wait --load networkidle` after navigation before asserting
-- Use `screenshot --full failure.png` on failure as evidence
-- Use `screenshot --annotate` for AI-readable labeled screenshots (or set `AGENT_BROWSER_ANNOTATE=1`)
-- Use `diff screenshot --baseline` for visual regression
+| Failure | Recovery |
+|:---|:---|
+| Element ref stale | Re-run `snapshot`, relocate |
+| Assertion content mismatch | Screenshot + **judgment gate** |
+| Page not loading | `wait --load networkidle` + retry up to 3x |
+| Staging cert error | `--ignore-https-errors` (never in production) |
+| Slow page | `AGENT_BROWSER_DEFAULT_TIMEOUT=60000` |
 
 ---
 
-## When Tests Fail — Inline Debug Steps
+## Judgment Gates
 
-**Don't switch to `agent-browser-debug` yet.** Run these first:
+Pause and ask user when:
+- JS errors found before test steps begin
+- Expected content ≠ actual (may be a bug)
+- Test step fails after all retries exhausted
+
+---
+
+## Device & Environment Variants
 
 ```bash
-agent-browser errors                          # Step 1: JS errors?
-agent-browser console --pattern "error|warn"  # Step 2: console logs?
-agent-browser snapshot -i                     # Step 3: DOM state?
-agent-browser screenshot --full failure.png   # Step 4: capture evidence
-```
+# Mobile viewport
+AGENT_BROWSER_NATIVE=1 agent-browser set device "iPhone 15 Pro"
 
-If still unresolved, *then* load `agent-browser-debug`.
+# Offline / PWA
+AGENT_BROWSER_NATIVE=1 agent-browser set offline
+AGENT_BROWSER_NATIVE=1 agent-browser reload
+# ... assert offline state ...
+AGENT_BROWSER_NATIVE=1 agent-browser set offline off   # ALWAYS restore
+
+# Geo-aware
+AGENT_BROWSER_NATIVE=1 agent-browser set geo 31.2304 121.4737
+```
 
 ---
 
@@ -60,40 +84,5 @@ If still unresolved, *then* load `agent-browser-debug`.
 |:---|:---|
 | Assert before page loads | `wait --load networkidle` first |
 | Stale refs after navigation | Re-run `snapshot` after every nav |
-| No evidence on failure | Always capture `screenshot --full failure.png` |
-| Visual regressions undetected | Save baseline with `screenshot --full baseline.png` first |
-
----
-
-## After Task Completion
-
-**MANDATORY. Do not skip. There are no exceptions.**
-
-### Step 1 — List pitfalls (always, even if none)
-
-Format each finding:
-
-🕳️ **Pitfall:** [what happened]
-   **Workaround:** [what fixed it]
-   **In skill?** ✅ Yes — [section] / ❌ Missing
-
-If zero pitfalls: write "✅ No new pitfalls encountered."
-
-### Step 2 — Ask the user
-
-> 「任务完成。遇到 N 个坑，其中 X 个还没写进 skill。要更新吗？」
-
-If user says yes → update the Pitfalls section + bump version:
-- New pitfall → patch x.x.**N**
-- New command → add to `agent-browser-commands` skill + minor x.**N**.0
-- After updating → scan all other `agent-browser-*` skills for the same issue (dead links, stale references, similar pitfalls)
-
-### Anti-rationalization
-
-| Excuse | Reality |
-|:---|:---|
-| "No pitfalls encountered" | Write "✅ No new pitfalls" — still required |
-| "I mentioned issues inline" | Inline ≠ structured retrospective |
-| "Task was simple" | Short list is fine. No list is not. |
-| "User can see what happened" | User needs a structured summary to decide on iteration |
-| "Not sure if it's a skill issue" | If you worked around something, it's a pitfall |
+| `set offline` left on | Always `set offline off` after offline test |
+| Staging cert error | `--ignore-https-errors` — never in production |

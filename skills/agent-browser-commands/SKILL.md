@@ -1,27 +1,11 @@
 ---
 name: agent-browser-commands
-description: Use when looking up agent-browser command syntax or global options, or when unsure whether agent-browser is the right tool for a browser task
+description: Internal command reference for agent-browser CLI. Used by agent-browser orchestrator during execution.
 ---
 
-# Agent Browser — Command Reference & Overview
+# Agent Browser — Command Reference
 
-**agent-browser covers:** E2E testing, web scraping, form automation, debugging.
-**Not agent-browser:** Simple HTTP requests (use curl), static HTML (use curl+cheerio), large test suites (use Playwright).
-
-**Task type → skill to load:**
-
-| Task | Load skill |
-|:---|:---|
-| Testing / Validation | `agent-browser-e2e` |
-| Debugging | `agent-browser-debug` |
-| Data Extraction | `agent-browser-scrape` |
-| Automation / Forms | `agent-browser-automate` |
-
-**Security (v0.15+):** `--domain-allowlist example.com` restricts to approved domains. Action confirmation enabled by default in interactive mode.
-
----
-
-> For task-specific workflows, see the specialized skills above.
+> **Internal reference.** For browser automation tasks, use `agent-browser` skill as entry point.
 
 ---
 
@@ -276,3 +260,5 @@ agent-browser find nth 2 ".card" hover     # 0-based index
 | `--annotate` | Annotated output |
 | `--debug` | Debug output |
 | `--domain-allowlist <domain>` | Restrict to approved domains (security) |
+
+---

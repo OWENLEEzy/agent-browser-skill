@@ -1,50 +1,122 @@
 ---
 name: agent-browser-automate
-description: Use when automating browser workflows — form filling, file upload/download, login session reuse, multi-step flows
+description: "[INTERNAL TEMPLATE] Task automation execution protocol. Called by agent-browser orchestrator."
 ---
 
-# Agent Browser — Automation
+# Task Automation — Execution Protocol
 
-**Recommended config:** `--profile <path>` to persist login session across runs
+> **Internal template.** Entry point: `agent-browser` skill.
 
 ---
 
-## Environment Check
+## Auth Setup (choose one, in priority order)
 
 ```bash
-printenv | grep AGENT_BROWSER   # already set? Omit the corresponding inline flag
+# Option 1 (recommended): Auth Vault — encrypted, team-shareable
+agent-browser auth login <vault-name>
+agent-browser open <url>
+
+# Option 2: Persistent profile (local only)
+agent-browser --profile ~/.myapp open <url>
+
+# Option 3: Token injection
+agent-browser open <url>
+agent-browser storage local set authToken "<token>"
+agent-browser reload
+
+# Option 4: HTTP Basic Auth
+agent-browser open <url>
+agent-browser set credentials <user> <pass>
+
+# Option 5: Bearer header
+agent-browser --headers '{"Authorization":"Bearer <token>"}' open <url>
 ```
 
 ---
 
-## Workflow
+## Form Automation Sequence
 
 ```bash
-# First run: log in and save session
-agent-browser --profile ~/.myapp open https://app.example.com/login
-agent-browser --profile ~/.myapp find label "Email" fill "me@example.com"
-agent-browser --profile ~/.myapp find label "Password" fill "secret"
-agent-browser --profile ~/.myapp find role button click --name "Sign In"
-agent-browser --profile ~/.myapp wait --load networkidle
-
-# Subsequent runs: already authenticated
-agent-browser --profile ~/.myapp open https://app.example.com/dashboard
-agent-browser --profile ~/.myapp find role button click --name "Export"
-agent-browser --profile ~/.myapp find role button click --name "Export CSV" download ~/report.csv
+agent-browser snapshot -i                                    # get refs
+agent-browser find label "Email" fill "user@example.com"
+agent-browser find label "Password" fill "<password>"
+agent-browser find role button click --name "Submit"
+agent-browser wait --load networkidle
+agent-browser screenshot --full step-complete.png           # evidence
 ```
 
 ---
 
-## Key Patterns
+## File Operations
 
-| Pattern | Command |
+```bash
+# Upload
+agent-browser find label "Attachment" upload ./file.pdf
+
+# Download (triggers on button click)
+agent-browser find role button click --name "Export CSV" download ~/report.csv
+
+# Generate PDF
+agent-browser pdf ./report.pdf
+```
+
+---
+
+## Multi-Tab Flows
+
+```bash
+agent-browser tab new
+agent-browser open <second-url>
+agent-browser tab 0       # switch back to first tab
+agent-browser tab list    # see all tabs
+```
+
+---
+
+## Clipboard
+
+```bash
+# Read clipboard
+agent-browser eval "navigator.clipboard.readText()"
+
+# Write clipboard
+agent-browser eval "navigator.clipboard.writeText('text')"
+
+# Paste (macOS)
+agent-browser keyboard inserttext "$(pbpaste)"
+```
+
+---
+
+## Fine Mouse Control (canvas / Kanban / drawing apps)
+
+```bash
+agent-browser mouse move <x> <y>
+agent-browser mouse down
+agent-browser mouse move <x2> <y2>   # drag
+agent-browser mouse up
+```
+
+---
+
+## Recovery Patterns
+
+| Failure | Recovery |
 |:---|:---|
-| Persist auth across runs | `--profile ~/.myapp` |
-| Set default download dir | `--download-path ~/Downloads` |
-| Scroll inside modal/container | `scroll down --selector ".modal-body"` |
-| Dismiss unexpected popup | `dialog dismiss` |
-| Upload file | `find label "Resume" upload ./resume.pdf` |
-| Append text (don't clear) | `type @e1 "text"` — vs `fill` which clears first |
+| Auth expired | `auth login <name>` re-authenticate |
+| Auth Vault password changed | `auth delete <name>` then `auth save <name>` |
+| Unexpected popup/dialog | `dialog dismiss` |
+| `fill` overwrites existing content | Use `type` to append |
+| Modal won't scroll | `scroll down --selector ".modal-body"` |
+
+---
+
+## Judgment Gates
+
+Pause when:
+- About to submit a form (show field values → ask confirm)
+- About to trigger download / delete / payment
+- Auth fails after retry (need fresh credentials)
 
 ---
 
@@ -52,39 +124,7 @@ agent-browser --profile ~/.myapp find role button click --name "Export CSV" down
 
 | Mistake | Fix |
 |:---|:---|
-| Profile session expired (401) | Delete profile dir, re-auth |
-| `fill` overwrites existing content | Use `type` to append to existing text |
+| Auth Vault password changed | `auth delete` + `auth save` again — no in-place update |
+| `fill` clears content unintentionally | Use `type` to append |
 | File upload fails | Use `find label "..." upload <path>`, not `click` then `fill` |
 | Can't scroll inside modal | `scroll down --selector ".modal-body"` |
-
----
-
-## After Task Completion
-
-**MANDATORY. Do not skip. There are no exceptions.**
-
-### Step 1 — List pitfalls (always, even if none)
-
-Format each finding:
-
-🕳️ **Pitfall:** [what happened]
-   **Workaround:** [what fixed it]
-   **In skill?** ✅ Yes — [section] / ❌ Missing
-
-If zero pitfalls: write "✅ No new pitfalls encountered."
-
-### Step 2 — Ask the user
-
-> 「任务完成。遇到 N 个坑，其中 X 个还没写进 skill。要更新吗？」
-
-If yes → update Pitfalls + bump version. Then scan all other `agent-browser-*` skills for the same issue.
-
-### Anti-rationalization
-
-| Excuse | Reality |
-|:---|:---|
-| "No pitfalls encountered" | Write "✅ No new pitfalls" — still required |
-| "I mentioned issues inline" | Inline ≠ structured retrospective |
-| "Task was simple" | Short list is fine. No list is not. |
-| "User can see what happened" | User needs a structured summary to decide on iteration |
-| "Not sure if it's a skill issue" | If you worked around something, it's a pitfall |

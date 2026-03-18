@@ -1,43 +1,63 @@
 ---
 name: agent-browser-debug
-description: Use when investigating why a web page isn't working — JS errors, broken buttons, failed API calls, unexpected UI state
+description: "[INTERNAL TEMPLATE] Debugging execution protocol. Called by agent-browser orchestrator."
 ---
 
-# Agent Browser — Debugging
+# Debug Diagnosis — Execution Protocol
 
-**Recommended config:** `AGENT_BROWSER_HEADED=1` + `inspect` for DevTools access
+> **Internal template.** Entry point: `agent-browser` skill.
 
 ---
 
-## Environment Check
+## Triage Sequence (run in order, stop at first finding)
 
 ```bash
-printenv | grep AGENT_BROWSER   # already set? Omit the corresponding inline flag
-```
+AGENT_BROWSER_HEADED=1 agent-browser open <url>
 
----
+# Step 1: JS errors (explains 80% of broken UIs)
+AGENT_BROWSER_HEADED=1 agent-browser errors
 
-## Workflow
-
-```bash
-AGENT_BROWSER_HEADED=1 agent-browser open https://app.example.com/problem-page
-AGENT_BROWSER_HEADED=1 agent-browser errors                       # 1. JS errors first
+# Step 2: Console warnings
 AGENT_BROWSER_HEADED=1 agent-browser console --pattern "error|warn"
+
+# Step 3: Failed network requests
 AGENT_BROWSER_HEADED=1 agent-browser network requests --filter "api"
-AGENT_BROWSER_HEADED=1 agent-browser snapshot -i                  # DOM state
-AGENT_BROWSER_HEADED=1 agent-browser is enabled @e5               # check element state
+
+# Step 4: Auth state (check first if login/session suspected)
+AGENT_BROWSER_HEADED=1 agent-browser cookies         # token present?
+AGENT_BROWSER_HEADED=1 agent-browser storage local   # JWT present?
+
+# Step 5: DOM state
+AGENT_BROWSER_HEADED=1 agent-browser snapshot -i
+AGENT_BROWSER_HEADED=1 agent-browser is enabled @e5
+AGENT_BROWSER_HEADED=1 agent-browser is visible @e3
+
+# Step 6: Form validity (if button appears enabled but won't click)
 AGENT_BROWSER_HEADED=1 agent-browser eval "document.querySelector('form').checkValidity()"
-AGENT_BROWSER_HEADED=1 agent-browser inspect                      # open DevTools (CLI stays live)
+
+# Step 7: Deep investigation
+AGENT_BROWSER_HEADED=1 agent-browser inspect         # DevTools (CLI stays live)
 ```
 
 ---
 
-## Key Patterns
+## Recovery Patterns
 
-- **Always run `errors` first** — JS errors explain most broken UIs
-- `inspect` opens DevTools while CLI commands keep working simultaneously
-- `get cdp-url` → hand off CDP WebSocket to an external tool
-- `highlight <selector>` → visually confirm which element you're targeting
+| Symptom | Next action |
+|:---|:---|
+| JS errors found | Report errors → **judgment gate**: continue or stop? |
+| Auth token missing | Re-run auth flow, recheck |
+| Network 4xx/5xx | Report endpoint + status → judgment gate |
+| `is enabled` false | Check form validity via `eval` |
+
+---
+
+## Judgment Gates
+
+Pause when:
+- JS errors found (show to user, ask: bug or known?)
+- Auth token missing (hard to auto-recover without credentials)
+- API returning unexpected errors (user needs to decide next step)
 
 ---
 
@@ -45,39 +65,6 @@ AGENT_BROWSER_HEADED=1 agent-browser inspect                      # open DevTool
 
 | Mistake | Fix |
 |:---|:---|
-| Skip `errors`, jump to DOM | Errors explain 80% of issues — always check first |
-| `is enabled` returns false, give up | Use `eval` to check form validation state |
+| Skip `errors`, jump to DOM | Errors explain 80% — always check first |
+| Auth bug → jump to JS debugging | Check `cookies` + `storage local` first |
 | Think `inspect` kills CLI | It doesn't — both work simultaneously |
-| Button looks enabled but won't click | Check `is enabled`, then `eval` form validity |
-
----
-
-## After Task Completion
-
-**MANDATORY. Do not skip. There are no exceptions.**
-
-### Step 1 — List pitfalls (always, even if none)
-
-Format each finding:
-
-🕳️ **Pitfall:** [what happened]
-   **Workaround:** [what fixed it]
-   **In skill?** ✅ Yes — [section] / ❌ Missing
-
-If zero pitfalls: write "✅ No new pitfalls encountered."
-
-### Step 2 — Ask the user
-
-> 「任务完成。遇到 N 个坑，其中 X 个还没写进 skill。要更新吗？」
-
-If yes → update Pitfalls + bump version. Then scan all other `agent-browser-*` skills for the same issue.
-
-### Anti-rationalization
-
-| Excuse | Reality |
-|:---|:---|
-| "No pitfalls encountered" | Write "✅ No new pitfalls" — still required |
-| "I mentioned issues inline" | Inline ≠ structured retrospective |
-| "Task was simple" | Short list is fine. No list is not. |
-| "User can see what happened" | User needs a structured summary to decide on iteration |
-| "Not sure if it's a skill issue" | If you worked around something, it's a pitfall |
