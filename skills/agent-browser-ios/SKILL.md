@@ -11,6 +11,18 @@ description: "[INTERNAL TEMPLATE] iOS Simulator execution protocol. Called by ag
 
 ---
 
+## NEVER
+
+```
+NEVER run commands before Simulator is booted — daemon can't connect; boot first with xcrun simctl
+NEVER use `scroll` on iOS — use `swipe up` / `swipe down` instead
+NEVER use `click` on native touch targets — prefer `tap @ref` for iOS elements
+NEVER copy element refs across navigations — re-run `snapshot -i` after every screen change
+NEVER assume WebView content is inspectable — must enable Web Inspector in Safari → Develop → [device]
+```
+
+---
+
 ## Prerequisites
 
 iOS Simulator requires:
